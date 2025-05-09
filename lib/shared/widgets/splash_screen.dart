@@ -15,7 +15,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
     // delay for some seconds before navigating to the home screen
     Future.delayed(const Duration(seconds: 3), () {
-      context.go('/home');
+      context.go('/signin');
     });
   }
 

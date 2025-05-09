@@ -34,17 +34,6 @@ class AppTheme {
         ),
       ),
 
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: inputBackground,
-        contentPadding: EdgeInsets.symmetric(vertical: 18, horizontal: 20),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(40),
-          borderSide: BorderSide.none,
-        ),
-        hintStyle: TextStyle(color: Colors.grey[400]),
-      ),
-
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.black,
