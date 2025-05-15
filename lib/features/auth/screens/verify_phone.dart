@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:pin_code_fields/pin_code_fields.dart';
 import 'package:taketaxi/core/constants/colors.dart';
-import 'package:taketaxi/shared/services/toast_service.dart';
 import 'package:taketaxi/shared/widgets/custom_button.dart';
 import 'package:taketaxi/shared/widgets/custom_toast.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -43,6 +43,7 @@ class EnterCodeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 32),
               PinCodeTextField(
+                keyboardType: TextInputType.phone,
                 appContext: context,
                 length: 4,
                 obscureText: false,
@@ -60,29 +61,39 @@ class EnterCodeScreen extends StatelessWidget {
                 onCompleted: (value) => code = value,
               ),
               const SizedBox(height: 50),
-              const Text("You will be able to resend in 30s "),
-              TextButton(
-                onPressed: () {},
-                child: const Text(
-                  "Resend",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    "You will be able to resend in 30s ",
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      color: Colors.black,
+                      fontWeight: FontWeight.normal,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {},
+                    child: const Text(
+                      "Resend",
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 100),
               SizedBox(
                 width: double.infinity,
                 child: CustomRoundedButton(
                   text: 'Verify',
+                  backgroundColor: AppColors.black,
                   onPressed: () {
-                    if (code == "5555") {
-                      showCustomToast(
-                        context,
-                        "Code verified successfully",
-                        ToastType.success,
-                      );
-                    } else {
-                      showCustomToast(context, "Invalid code", ToastType.error);
-                    }
+                    context.go('/home');
+                    showCustomSnackbar(
+                      context,
+                      "Welcome to TakeTaxi",
+                      ToastType.success,
+                    );
                   },
                 ),
               ),

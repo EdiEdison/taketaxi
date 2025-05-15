@@ -2,30 +2,27 @@ import 'package:flutter/material.dart';
 
 enum ToastType { success, error }
 
-class CustomToast extends StatelessWidget {
-  final String message;
-  final ToastType type;
+void showCustomSnackbar(BuildContext context, String message, ToastType type) {
+  final bgColor = type == ToastType.success ? Colors.green : Colors.red;
+  final icon =
+      type == ToastType.success ? Icons.check_circle : Icons.error_outline;
 
-  const CustomToast({super.key, required this.message, required this.type});
-
-  @override
-  Widget build(BuildContext context) {
-    final bgColor = type == ToastType.success ? Colors.green : Colors.red;
-    final icon =
-        type == ToastType.success ? Icons.check_circle : Icons.error_outline;
-
-    return Container(
+  final snackBar = SnackBar(
+    elevation: 0,
+    backgroundColor: Colors.transparent,
+    behavior: SnackBarBehavior.floating,
+    margin: const EdgeInsets.only(top: 30, left: 16, right: 16),
+    content: Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, color: Colors.white),
           const SizedBox(width: 8),
-          Flexible(
+          Expanded(
             child: Text(
               message,
               style: const TextStyle(
@@ -36,6 +33,9 @@ class CustomToast extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
+    ),
+    duration: const Duration(seconds: 3),
+  );
+
+  ScaffoldMessenger.of(context).showSnackBar(snackBar);
 }

@@ -34,6 +34,8 @@
 	<string>AIzaSyBpxYpVUtQlXjQgBCJNDvLkADlgTQ9IbLs</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>We need your location to find taxis nearby</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>This app needs access to location when in the background.</string>
 	<key>UISupportedInterfaceOrientations</key>
 
 	<array>

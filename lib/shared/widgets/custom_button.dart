@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:taketaxi/core/constants/colors.dart';
 
 class CustomRoundedButton extends StatelessWidget {
   final String text;
+  final Color? backgroundColor;
   final VoidCallback onPressed;
 
   const CustomRoundedButton({
     super.key,
     required this.text,
+    this.backgroundColor,
     required this.onPressed,
   });
 
@@ -16,7 +19,7 @@ class CustomRoundedButton extends StatelessWidget {
       style: ElevatedButton.styleFrom(
         padding: const EdgeInsets.symmetric(vertical: 18),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(40)),
-        backgroundColor: Colors.black,
+        backgroundColor: backgroundColor ?? AppColors.black,
         elevation: 0,
       ),
       onPressed: onPressed,

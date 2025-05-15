@@ -4,6 +4,7 @@ import 'package:intl_phone_field/intl_phone_field.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:taketaxi/core/constants/colors.dart';
 import 'package:taketaxi/shared/widgets/custom_button.dart';
+import 'package:taketaxi/shared/widgets/custom_toast.dart';
 
 class SignIn extends StatefulWidget {
   const SignIn({super.key});
@@ -14,6 +15,20 @@ class SignIn extends StatefulWidget {
 
 class _SignInState extends State<SignIn> {
   String? phoneNumber;
+
+  void checkField() {
+    if (phoneNumber != null) {
+      // Navigate to OTP screen or handle next step
+      context.go('/verifyphone', extra: phoneNumber);
+      showCustomSnackbar(context, "Code sent successfully", ToastType.success);
+    } else {
+      showCustomSnackbar(
+        context,
+        "Please Enter your phone number",
+        ToastType.error,
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -65,7 +80,7 @@ class _SignInState extends State<SignIn> {
                 },
               ),
               const SizedBox(height: 50),
-              Container(
+              SizedBox(
                 width: 300,
                 child: RichText(
                   textAlign: TextAlign.center,
@@ -92,13 +107,13 @@ class _SignInState extends State<SignIn> {
                 width: double.infinity,
                 child: CustomRoundedButton(
                   text: 'Send Code',
+                  backgroundColor:
+                      phoneNumber != null
+                          ? AppColors.black
+                          : AppColors.buttonDisabled,
                   onPressed: () {
                     // Validate and navigate
-                    if (phoneNumber != null) {
-                      print('Phone: $phoneNumber');
-                      // Navigate to OTP screen or handle next step
-                      context.go('/verifyphone', extra: phoneNumber);
-                    }
+                    checkField();
                   },
                 ),
               ),
