@@ -12,4 +12,6 @@ class AppColors {
   static const Color inputBackground = Color(0xFF2E2E2E);
   static const Color textMuted = Color(0xFF6B6B6B);
   static const Color buttonDisabled = Color(0xFFB2B0AB);
+  static const Color success = Colors.green;
+  static const Color blue = Colors.blue;
 }

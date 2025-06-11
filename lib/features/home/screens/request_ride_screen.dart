@@ -1,10 +1,12 @@
-import 'dart:developer';
-
-import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:developer';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:taketaxi/core/constants/colors.dart';
+import 'package:taketaxi/features/home/widgets/payment_option_bottom_sheet.dart';
 import 'package:taketaxi/shared/widgets/custom_button.dart';
 import 'package:taketaxi/shared/widgets/custom_toast.dart';
 
@@ -23,11 +25,18 @@ class _RequestRideScreenState extends State<RequestRideScreen> {
   final TextEditingController _priceController = TextEditingController();
   bool _isLoading = true;
   bool _isMapControllerInitialized = false;
+  bool _isRequestingRide = false;
+
+  LatLng? _taxiPosition;
+  String? _estimatedArrivalTime;
+  bool _rideFound = false;
+
+  String _selectedPaymentOption = "I have cash";
 
   @override
   void initState() {
     super.initState();
-    _getCurrentLocation();
+    _loadLocationFromSharedPreferences();
   }
 
   @override
@@ -37,29 +46,116 @@ class _RequestRideScreenState extends State<RequestRideScreen> {
     super.dispose();
   }
 
-  Future<void> _getCurrentLocation() async {
+  Future<void> _loadLocationFromSharedPreferences() async {
     setState(() => _isLoading = true);
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String? storedLocation = prefs.getString('lastKnownLocation');
+
+    if (storedLocation != null) {
+      try {
+        final parts = storedLocation.split(',');
+        final lat = double.parse(parts[0]);
+        final lng = double.parse(parts[1]);
+        final LatLng loadedLatLng = LatLng(lat, lng);
+        log("Loaded location from SharedPreferences: $loadedLatLng");
+
+        setState(() {
+          _currentPosition = loadedLatLng;
+          _markers.clear();
+          _markers.add(
+            Marker(
+              markerId: const MarkerId("currentLocation"),
+              position: loadedLatLng,
+              icon: BitmapDescriptor.defaultMarkerWithHue(
+                BitmapDescriptor.hueBlue,
+              ),
+              infoWindow: const InfoWindow(title: "My Location"),
+            ),
+          );
+          _isLoading = false;
+        });
+
+        if (_isMapControllerInitialized) {
+          mapController.animateCamera(
+            CameraUpdate.newLatLngZoom(loadedLatLng, 16.5),
+          );
+        }
+      } catch (e) {
+        log("Error parsing stored location: $e");
+        // Fallback to getting current location if parsing fails
+        _getCurrentLocation();
+      }
+    } else {
+      log("No location found in SharedPreferences. Getting current location.");
+      // If no stored location, try to get it directly
+      _getCurrentLocation();
+    }
+  }
+
+  Future<void> _getCurrentLocation({bool forceFetch = false}) async {
+    if (forceFetch || _currentPosition == null) {
+      setState(() => _isLoading = true);
+    }
 
     try {
       var status = await Permission.location.status;
       if (status.isDenied) {
+        log("Location permission denied. Requesting again...");
         status = await Permission.location.request();
         if (status.isDenied) {
-          showCustomSnackbar(
-            context,
-            "Location permission is required",
-            ToastType.error,
-          );
+          log("Location permission still denied after request.");
+          if (mounted) {
+            showCustomSnackbar(
+              context,
+              "Location permission is required to get your current location.",
+              ToastType.error,
+            );
+          }
           setState(() => _isLoading = false);
           return;
         }
+      }
+
+      if (status.isPermanentlyDenied) {
+        log("Location permission permanently denied. Guiding to settings.");
+        if (mounted) {
+          showCustomSnackbar(
+            context,
+            "Location permission is permanently denied. Please enable it in app settings.",
+            ToastType.error,
+          );
+        }
+        await openAppSettings();
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        log("Location services are disabled.");
+        if (mounted) {
+          showCustomSnackbar(
+            context,
+            "Location services are disabled. Please enable them.",
+            ToastType.error,
+          );
+        }
+        setState(() => _isLoading = false);
+        return;
       }
 
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
       final currentLatLng = LatLng(position.latitude, position.longitude);
-      log("Initial position: $currentLatLng");
+      log("Current position fetched: $currentLatLng");
+
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'lastKnownLocation',
+        "${position.latitude},${position.longitude}",
+      );
+      log("Updated location in SharedPreferences.");
 
       setState(() {
         _currentPosition = currentLatLng;
@@ -72,12 +168,12 @@ class _RequestRideScreenState extends State<RequestRideScreen> {
               BitmapDescriptor.hueBlue,
             ),
             infoWindow: const InfoWindow(title: "My Location"),
+            rotation: position.heading,
           ),
         );
         _isLoading = false;
       });
 
-      // Animate camera to the initial location if the controller is initialized
       if (_isMapControllerInitialized) {
         mapController.animateCamera(
           CameraUpdate.newLatLngZoom(currentLatLng, 16.5),
@@ -85,7 +181,9 @@ class _RequestRideScreenState extends State<RequestRideScreen> {
       }
     } catch (e) {
       log("Error getting location: $e");
-      showCustomSnackbar(context, "Error getting location", ToastType.error);
+      if (mounted) {
+        showCustomSnackbar(context, "Error getting location", ToastType.error);
+      }
       setState(() => _isLoading = false);
     }
   }
@@ -100,16 +198,43 @@ class _RequestRideScreenState extends State<RequestRideScreen> {
     }
   }
 
+  void _showPaymentOptionBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return PaymentOptionBottomSheet(
+          onOptionSelected: (option) {
+            setState(() {
+              _selectedPaymentOption = option;
+            });
+          },
+        );
+      },
+    );
+  }
+
+  void _onLocationSelected(String selectedLocation) {
+    setState(() {
+      _destinationController.text = selectedLocation;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         children: [
-          // Map
           GoogleMap(
             onMapCreated: _onMapCreated,
             initialCameraPosition: CameraPosition(
-              target: _currentPosition ?? const LatLng(3.8480, 11.5021),
+              target:
+                  _currentPosition ??
+                  const LatLng(
+                    3.8480,
+                    11.5021,
+                  ), // Default to a known location if none
               zoom: 14,
             ),
             myLocationEnabled: true,
@@ -121,6 +246,45 @@ class _RequestRideScreenState extends State<RequestRideScreen> {
           if (_isLoading)
             const Center(
               child: CircularProgressIndicator(color: AppColors.primary),
+            ),
+
+          if (_rideFound && _estimatedArrivalTime != null)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 10,
+              left: 16,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.success,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.timer, color: Colors.white),
+                    const SizedBox(width: 8),
+                    Text(
+                      "Taxi arriving in: $_estimatedArrivalTime",
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
 
           Positioned(
@@ -194,7 +358,6 @@ class _RequestRideScreenState extends State<RequestRideScreen> {
             ),
           ),
 
-          // Bottom UI Overlay
           Positioned(
             left: 16,
             right: 16,
@@ -202,11 +365,41 @@ class _RequestRideScreenState extends State<RequestRideScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _buildTextField(
-                  "Where are you going?",
-                  controller: _destinationController,
-                  prefixIcon: Icons.search,
+                GestureDetector(
+                  onTap: () {
+                    context.go('/home/location', extra: _onLocationSelected);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 16,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Text(
+                      _destinationController.text.isEmpty
+                          ? "Where to?"
+                          : _destinationController.text,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color:
+                            _destinationController.text.isEmpty
+                                ? AppColors.black
+                                : AppColors.black,
+                      ),
+                    ),
+                  ),
                 ),
+
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -218,28 +411,36 @@ class _RequestRideScreenState extends State<RequestRideScreen> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 16,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 4,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        children: const [
-                          Text("in", style: TextStyle(color: Colors.black87)),
-                          SizedBox(width: 4),
-                          Icon(Icons.keyboard_arrow_down, size: 18),
-                        ],
+                    GestureDetector(
+                      onTap: _showPaymentOptionBottomSheet,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 16,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Text(
+                              _selectedPaymentOption.length > 8
+                                  ? "${_selectedPaymentOption.substring(0, 6)}..."
+                                  : _selectedPaymentOption,
+                              style: const TextStyle(color: Colors.black87),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(Icons.keyboard_arrow_down, size: 18),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -252,8 +453,7 @@ class _RequestRideScreenState extends State<RequestRideScreen> {
                               _priceController.text.isEmpty
                           ? AppColors.buttonDisabled
                           : AppColors.primary,
-                  onPressed: () {
-                    // Handle request submission
+                  onPressed: () async {
                     String destination = _destinationController.text;
                     String price = _priceController.text;
 
@@ -269,14 +469,113 @@ class _RequestRideScreenState extends State<RequestRideScreen> {
                     if (price.isEmpty) {
                       showCustomSnackbar(
                         context,
-                        "Please enter a price",
+                        "Please enter your price",
                         ToastType.error,
                       );
                       return;
                     }
 
-                    // Process the request
-                    // Add your implementation here
+                    if (_currentPosition == null) {
+                      showCustomSnackbar(
+                        context,
+                        "Unable to get your current location. Please ensure location services are enabled.",
+                        ToastType.error,
+                      );
+                      return;
+                    }
+
+                    setState(() {
+                      _isRequestingRide = true;
+                      _rideFound = false;
+                    });
+
+                    await Future.delayed(const Duration(seconds: 3));
+
+                    BitmapDescriptor? taxiIcon;
+                    try {
+                      taxiIcon = await BitmapDescriptor.fromAssetImage(
+                        const ImageConfiguration(size: Size(12, 12)),
+                        'assets/images/taxi_medium.png',
+                      );
+                    } catch (e) {
+                      log("Error loading taxi icon: $e");
+                      taxiIcon = BitmapDescriptor.defaultMarkerWithHue(
+                        BitmapDescriptor.hueOrange,
+                      );
+                    }
+
+                    setState(() {
+                      _isRequestingRide = false;
+                      if (_currentPosition != null) {
+                        _taxiPosition = LatLng(
+                          _currentPosition!.latitude +
+                              0.003, // approx 333 meters North
+                          _currentPosition!.longitude -
+                              0.005, // approx 555 meters West
+                        );
+                        _estimatedArrivalTime = "5 min";
+
+                        _markers.add(
+                          Marker(
+                            markerId: const MarkerId("taxiLocation"),
+                            position: _taxiPosition!,
+                            icon: taxiIcon!,
+                            infoWindow: const InfoWindow(title: "Your Taxi"),
+                          ),
+                        );
+                        _rideFound = true;
+                        showCustomSnackbar(
+                          context,
+                          "Taxi found! Arriving in $_estimatedArrivalTime",
+                          ToastType.success,
+                        );
+
+                        if (_isMapControllerInitialized) {
+                          mapController.animateCamera(
+                            CameraUpdate.newLatLngBounds(
+                              LatLngBounds(
+                                southwest: LatLng(
+                                  _currentPosition!.latitude <
+                                          _taxiPosition!.latitude
+                                      ? _currentPosition!.latitude
+                                      : _taxiPosition!.latitude,
+                                  _currentPosition!.longitude <
+                                          _taxiPosition!.longitude
+                                      ? _currentPosition!.longitude
+                                      : _taxiPosition!.longitude,
+                                ),
+                                northeast: LatLng(
+                                  _currentPosition!.latitude >
+                                          _taxiPosition!.latitude
+                                      ? _currentPosition!.latitude
+                                      : _taxiPosition!.latitude,
+                                  _currentPosition!.longitude >
+                                          _taxiPosition!.longitude
+                                      ? _currentPosition!.longitude
+                                      : _taxiPosition!.longitude,
+                                ),
+                              ),
+                              100.0,
+                            ),
+                          );
+                        }
+                      } else {
+                        showCustomSnackbar(
+                          context,
+                          "Could not find taxi. Location unavailable.",
+                          ToastType.error,
+                        );
+                      }
+                    });
+
+                    log(
+                      "Destination: $destination, Price: $price, Payment Option: $_selectedPaymentOption",
+                    );
+                    showCustomSnackbar(
+                      context,
+                      "Ride requested!",
+                      ToastType.success,
+                    );
                   },
                 ),
               ],
@@ -290,19 +589,37 @@ class _RequestRideScreenState extends State<RequestRideScreen> {
             child: FloatingActionButton(
               heroTag: "myLocationBtn",
               mini: true,
-              backgroundColor: Colors.blue,
+              backgroundColor: AppColors.blue,
               child: const Icon(Icons.my_location, color: Colors.white),
               onPressed: () {
-                if (_currentPosition != null && _isMapControllerInitialized) {
-                  mapController.animateCamera(
-                    CameraUpdate.newLatLngZoom(_currentPosition!, 16.5),
-                  );
-                } else {
-                  _getCurrentLocation();
-                }
+                // Force a fresh fetch when the user taps "my location"
+                _getCurrentLocation(forceFetch: true);
               },
             ),
           ),
+          if (_isRequestingRide)
+            Positioned.fill(
+              child: Container(
+                color: AppColors.black.withOpacity(0.5),
+                child: const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(color: AppColors.primary),
+                      SizedBox(height: 16),
+                      Text(
+                        "Looking for a ride...",
+                        style: TextStyle(
+                          color: AppColors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -316,11 +633,11 @@ class _RequestRideScreenState extends State<RequestRideScreen> {
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: AppColors.black.withOpacity(0.1),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -333,7 +650,7 @@ class _RequestRideScreenState extends State<RequestRideScreen> {
           hintText: hint,
           hintStyle: TextStyle(fontSize: 14, color: Colors.grey[600]),
           filled: true,
-          fillColor: Colors.white,
+          fillColor: AppColors.white,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 16,
@@ -342,10 +659,8 @@ class _RequestRideScreenState extends State<RequestRideScreen> {
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide.none,
           ),
-          prefixIcon:
-              prefixIcon != null ? Icon(prefixIcon, color: Colors.grey) : null,
         ),
-        style: const TextStyle(fontSize: 14, color: Colors.black),
+        style: const TextStyle(fontSize: 14, color: AppColors.black),
       ),
     );
   }

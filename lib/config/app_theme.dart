@@ -1,42 +1,36 @@
 import 'package:flutter/material.dart';
+import 'package:taketaxi/core/constants/colors.dart';
 
 class AppTheme {
-  static const Color primaryColor = Color(0xFFF9C21A);
-  static const Color backgroundColor = Colors.white;
-  static const Color textColor = Colors.black;
-  static const Color greyText = Color(0xFF888888);
-  static const Color inputBackground = Color(0xFF2D2D2D);
-  static const Color errorColor = Color(0xFFB00020);
-
   static ThemeData get lightTheme {
     return ThemeData(
       brightness: Brightness.light,
-      primaryColor: primaryColor,
-      scaffoldBackgroundColor: backgroundColor,
+      primaryColor: AppColors.primary,
+      scaffoldBackgroundColor: AppColors.lightGrey,
       fontFamily: 'Poppins',
 
       textTheme: TextTheme(
         headlineLarge: TextStyle(
           fontSize: 28,
           fontWeight: FontWeight.bold,
-          color: textColor,
+          color: AppColors.black,
         ),
         titleMedium: TextStyle(
           fontSize: 16,
           fontWeight: FontWeight.w500,
-          color: textColor,
+          color: AppColors.black,
         ),
-        bodyMedium: TextStyle(fontSize: 14, color: greyText),
+        bodyMedium: TextStyle(fontSize: 14, color: AppColors.black),
         labelLarge: TextStyle(
           fontSize: 16,
           fontWeight: FontWeight.bold,
-          color: Colors.white,
+          color: AppColors.white,
         ),
       ),
 
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.black,
+          backgroundColor: AppColors.black,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(40),
           ),
@@ -47,8 +41,19 @@ class AppTheme {
 
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: primaryColor,
+          foregroundColor: AppColors.primary,
           textStyle: TextStyle(fontWeight: FontWeight.bold),
+        ),
+      ),
+
+      appBarTheme: AppBarTheme(
+        backgroundColor: AppColors.primary,
+        elevation: 0,
+        centerTitle: true,
+        titleTextStyle: TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.bold,
+          color: AppColors.black,
         ),
       ),
     );

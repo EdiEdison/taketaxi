@@ -1,9 +1,16 @@
 import 'package:flutter/material.dart';
 
-enum ToastType { success, error }
+enum ToastType { success, error, warning, info }
 
 void showCustomSnackbar(BuildContext context, String message, ToastType type) {
-  final bgColor = type == ToastType.success ? Colors.green : Colors.red;
+  final bgColor =
+      type == ToastType.success
+          ? Colors.green
+          : type == ToastType.error
+          ? Colors.red
+          : type == ToastType.warning
+          ? Colors.amberAccent
+          : Colors.blueAccent;
   final icon =
       type == ToastType.success ? Icons.check_circle : Icons.error_outline;
 
