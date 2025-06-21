@@ -18,7 +18,7 @@ void showCustomSnackbar(BuildContext context, String message, ToastType type) {
     elevation: 0,
     backgroundColor: Colors.transparent,
     behavior: SnackBarBehavior.floating,
-    margin: const EdgeInsets.only(top: 30, left: 16, right: 16),
+    margin: const EdgeInsets.only(top: 60, left: 16, right: 16),
     content: Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(

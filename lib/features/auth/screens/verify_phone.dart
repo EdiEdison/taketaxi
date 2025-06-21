@@ -6,99 +6,129 @@ import 'package:taketaxi/shared/widgets/custom_button.dart';
 import 'package:taketaxi/shared/widgets/custom_toast.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-class EnterCodeScreen extends StatelessWidget {
-  const EnterCodeScreen({super.key});
+class EnterCodeScreen extends StatefulWidget {
+  final String? phoneNumber;
+
+  const EnterCodeScreen({super.key, this.phoneNumber});
+
+  @override
+  State<EnterCodeScreen> createState() => _EnterCodeScreenState();
+}
+
+class _EnterCodeScreenState extends State<EnterCodeScreen> {
+  String code = "";
 
   @override
   Widget build(BuildContext context) {
-    String code = "";
-
-    return Scaffold(
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const SizedBox(height: 150),
-              Image.asset('assets/images/logo.png', width: 150, height: 50),
-              const SizedBox(height: 20),
-
-              Text(
-                "What’s the code ?",
-                style: GoogleFonts.poppins(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.black,
+    return SafeArea(
+      child: Scaffold(
+        backgroundColor: AppColors.white,
+        appBar: AppBar(
+          backgroundColor: AppColors.white,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: AppColors.black),
+            onPressed: () {
+              if (Navigator.canPop(context)) {
+                context.pop();
+              }
+            },
+          ),
+          title: Text(
+            'Verification',
+            style: GoogleFonts.poppins(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: AppColors.black,
+            ),
+          ),
+          centerTitle: true,
+        ),
+        body: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 16),
+                Text(
+                  "Enter the 6-digit code we sent to ${widget.phoneNumber ?? '+237 677 123 456'}",
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    color: AppColors.black,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                "Enter the code sent to +237653603453",
-                style: GoogleFonts.poppins(
-                  fontSize: 12,
-                  color: Colors.black,
-                  fontWeight: FontWeight.normal,
-                ),
-              ),
-              const SizedBox(height: 32),
-              PinCodeTextField(
-                keyboardType: TextInputType.phone,
-                appContext: context,
-                length: 4,
-                obscureText: false,
-                autoFocus: true,
-                animationType: AnimationType.fade,
-                textStyle: const TextStyle(fontSize: 30),
-                pinTheme: PinTheme(
-                  shape: PinCodeFieldShape.underline,
-                  fieldHeight: 50,
-                  fieldWidth: 40,
-                  activeColor: AppColors.inputBackground,
-                  inactiveColor: AppColors.inputBackground,
-                ),
-                onChanged: (value) => code = value,
-                onCompleted: (value) => code = value,
-              ),
-              const SizedBox(height: 50),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    "You will be able to resend in 30s ",
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      color: Colors.black,
-                      fontWeight: FontWeight.normal,
+                const SizedBox(height: 32),
+                PinCodeTextField(
+                  keyboardType: TextInputType.number,
+                  appContext: context,
+                  length: 4,
+                  obscureText: false,
+                  autoFocus: true,
+                  animationType: AnimationType.fade,
+                  textStyle: GoogleFonts.poppins(
+                    fontSize: 30,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
+                  pinTheme: PinTheme(
+                    shape: PinCodeFieldShape.box,
+                    borderRadius: BorderRadius.circular(8),
+                    fieldHeight: 60,
+                    fieldWidth: 60,
+                    activeFillColor: Colors.grey[200],
+                    inactiveFillColor: Colors.grey[200],
+                    selectedFillColor: Colors.grey[200],
+                    activeColor: AppColors.primary,
+                    inactiveColor: Colors.transparent,
+                    selectedColor: AppColors.primary,
+                    fieldOuterPadding: const EdgeInsets.symmetric(
+                      horizontal: 8.0,
                     ),
                   ),
-                  TextButton(
-                    onPressed: () {},
-                    child: const Text(
-                      "Resend",
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 100),
-              SizedBox(
-                width: double.infinity,
-                child: CustomRoundedButton(
-                  text: 'Verify',
-                  backgroundColor: AppColors.black,
-                  onPressed: () {
-                    context.go('/home');
-                    showCustomSnackbar(
-                      context,
-                      "Welcome to TakeTaxi",
-                      ToastType.success,
-                    );
+                  enableActiveFill: true,
+                  onChanged: (value) {
+                    setState(() {
+                      code = value;
+                    });
+                  },
+                  onCompleted: (value) {
+                    setState(() {
+                      code = value;
+                    });
                   },
                 ),
-              ),
-              const SizedBox(height: 40),
-            ],
+                const SizedBox(height: 16),
+                Align(
+                  alignment: Alignment.center,
+                  child: TextButton(
+                    onPressed: () {
+                      // resend code logic here
+                    },
+                    child: Text(
+                      "Resend code",
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 100),
+                SizedBox(
+                  width: double.infinity,
+                  child: CustomRoundedButton(
+                    text: 'Continue',
+                    backgroundColor: AppColors.primary,
+                    onPressed: () {
+                      context.go('/complete_profile');
+                    },
+                  ),
+                ),
+                const SizedBox(height: 40),
+              ],
+            ),
           ),
         ),
       ),

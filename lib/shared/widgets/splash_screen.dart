@@ -27,48 +27,32 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
 
-    // Initialize AnimationController
     _animationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500), // Duration of the animation
+      duration: const Duration(milliseconds: 1500),
     );
 
-    // Initialize scale animation: Goes from 0.5 to 1.0
     _scaleAnimation = Tween<double>(begin: 0.5, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _animationController,
-        curve: Curves.easeOutCubic, // A cool easing curve
-      ),
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
     );
 
-    // Initialize fade animation: Goes from 0.0 (transparent) to 1.0 (opaque)
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _animationController,
-        curve: Curves.easeIn, // A different easing curve for fade
-      ),
+      CurvedAnimation(parent: _animationController, curve: Curves.easeIn),
     );
 
     // Start the animation
     _animationController.forward();
 
-    // Start the permission and location process after a slight delay
-    // to allow the animation to play a bit
     Future.delayed(const Duration(milliseconds: 1000), () {
       _initializePermissionsAndLocation();
     });
   }
 
   Future<void> _initializePermissionsAndLocation() async {
-    // You might want to show a loading indicator or text below the logo
-    // while these operations are ongoing. For now, the CircularProgressIndicator
-    // will serve this purpose implicitly.
-
     await _requestLocationPermission();
     await _requestNotificationPermission();
     await _saveCurrentLocation();
 
-    // After all checks, navigate to the next screen.
     if (mounted) {
       context.go('/signin');
     }
@@ -172,8 +156,7 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   void dispose() {
-    _animationController
-        .dispose(); // Dispose the controller when the widget is removed
+    _animationController.dispose();
     super.dispose();
   }
 
@@ -184,14 +167,13 @@ class _SplashScreenState extends State<SplashScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Use AnimatedBuilder to rebuild the widget as the animation value changes
             AnimatedBuilder(
               animation: _animationController,
               builder: (context, child) {
                 return FadeTransition(
-                  opacity: _fadeAnimation, // Apply fade animation
+                  opacity: _fadeAnimation,
                   child: ScaleTransition(
-                    scale: _scaleAnimation, // Apply scale animation
+                    scale: _scaleAnimation,
                     child: Image.asset(
                       'assets/images/logo.png',
                       width: 190,
@@ -201,8 +183,6 @@ class _SplashScreenState extends State<SplashScreen>
                 );
               },
             ),
-            const SizedBox(height: 20),
-            const Text("Initializing app..."),
           ],
         ),
       ),

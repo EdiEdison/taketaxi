@@ -37,6 +37,12 @@
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>This app needs access to location when in the background.</string>
 	<key>UISupportedInterfaceOrientations</key>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs access to your photo library to upload profile pictures and ID cards.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs camera access to take photos for your profile picture and ID card.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app needs microphone access for video recording (if you also pick videos).</string>
 
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

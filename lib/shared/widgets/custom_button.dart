@@ -4,13 +4,15 @@ import 'package:taketaxi/core/constants/colors.dart';
 class CustomRoundedButton extends StatelessWidget {
   final String text;
   final Color? backgroundColor;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
+  final Color? textColor;
 
   const CustomRoundedButton({
     super.key,
     required this.text,
     this.backgroundColor,
-    required this.onPressed,
+    this.onPressed,
+    this.textColor,
   });
 
   @override
@@ -25,8 +27,8 @@ class CustomRoundedButton extends StatelessWidget {
       onPressed: onPressed,
       child: Text(
         text,
-        style: const TextStyle(
-          color: Colors.white,
+        style: TextStyle(
+          color: textColor ?? Colors.white,
           fontWeight: FontWeight.bold,
         ),
       ),
