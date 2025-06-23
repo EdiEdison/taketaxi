@@ -78,6 +78,8 @@ class _PlacesApiGoogleMapSearchState extends State<PlacesApiGoogleMapSearch> {
     super.dispose();
   }
 
+  bool _isRequestingTaxi = false;
+
   void _showPaymentOptionsBottomSheet() {
     showModalBottomSheet(
       context: context,
@@ -247,20 +249,63 @@ class _PlacesApiGoogleMapSearchState extends State<PlacesApiGoogleMapSearch> {
 
                   const SizedBox(height: 24),
                   CustomRoundedButton(
-                    text: 'TakeTaxi',
+                    text: _isRequestingTaxi ? 'Requesting...' : 'TakeTaxi',
                     backgroundColor:
-                        canRequestTaxi ? AppColors.primary : Colors.grey,
+                        canRequestTaxi && !_isRequestingTaxi
+                            ? AppColors.primary
+                            : Colors.grey,
                     onPressed:
                         canRequestTaxi
-                            ? () {
-                              Navigator.pop(sheetContext);
-                              widget.onLocationSelected(_selectedDestination!);
+                            ? () async {
+                              setModalState(() {
+                                _isRequestingTaxi = true;
+                              });
+                              // Get the HomeController instance
                               final homeController =
                                   Provider.of<HomeController>(
                                     context,
                                     listen: false,
                                   );
-                              homeController.requestRide(context);
+
+                              // Set the destination first
+                              if (_selectedDestination != null) {
+                                await widget.onLocationSelected(
+                                  _selectedDestination!,
+                                );
+                              }
+
+                              await homeController.onLocationSelected(
+                                _selectedDestination!,
+                              );
+
+                              // Set payment method
+                              if (_selectedPaymentType == 'Momo') {
+                                homeController.updateSelectedPaymentMode(
+                                  PaymentMode.momo,
+                                );
+                              } else if (_selectedPaymentType ==
+                                  'Orange Money') {
+                                homeController.updateSelectedPaymentMode(
+                                  PaymentMode.orange,
+                                );
+                              } else if (_selectedPaymentType == 'Directly') {
+                                homeController.updateSelectedPaymentMode(
+                                  PaymentMode.directCash,
+                                );
+                                homeController.selectCashDenomination(
+                                  _selectedCashAmount,
+                                );
+                              }
+
+                              // Set estimated fare (you might want to calculate this based on distance)
+                              homeController.setEstimatedFare(
+                                1500,
+                              ); // Default fare
+
+                              // Close the bottom sheet
+                              Navigator.of(sheetContext).pop();
+
+                              // Navigate back to home screen
                               context.pop();
                             }
                             : null,

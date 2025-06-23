@@ -8,9 +8,12 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'dart:math' show cos, sqrt, asin;
 import 'package:permission_handler/permission_handler.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:taketaxi/core/constants/colors.dart';
 import 'package:taketaxi/core/utils/helpers.dart';
+import 'package:taketaxi/features/activity/controller/activity_controller.dart';
+import 'package:taketaxi/features/activity/model/activity_model.dart';
 import 'package:taketaxi/shared/widgets/custom_toast.dart';
 
 enum PaymentMode { momo, orange, directCash }
@@ -31,6 +34,8 @@ class HomeController extends ChangeNotifier {
   LatLng? _taxiPosition;
   String? _estimatedArrivalTime;
   LatLng? _taxiStartMovePosition;
+  bool _driverFoundPendingConfirmation = false;
+  bool get driverFoundPendingConfirmation => _driverFoundPendingConfirmation;
   bool _rideFound = false;
   bool _taxiArrived = false;
 
@@ -63,6 +68,7 @@ class HomeController extends ChangeNotifier {
 
   static const String _googleApiKey = "AIzaSyBpxYpVUtQlXjQgBCJNDvLkADlgTQ9IbLs";
 
+  // Getters
   GoogleMapController? get mapController => _mapController;
   LatLng? get currentPosition => _currentPosition;
   Set<Marker> get markers => _markers;
@@ -100,6 +106,31 @@ class HomeController extends ChangeNotifier {
 
   HomeController() {
     _loadLocationFromSharedPreferences();
+  }
+
+  void addActivityOnRouteDrawn(
+    BuildContext context,
+    String destination,
+    double estimatedFare,
+  ) {
+    final activityController = Provider.of<ActivityController>(
+      context,
+      listen: false,
+    );
+
+    final activity = Activity(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      destination: destination,
+      timestamp: DateTime.now(),
+      driverName: "Jean-Pierre",
+      carModel: "Toyota Camry",
+      licensePlate: "123-ABC-456",
+      estimatedFare: estimatedFare,
+      paymentMethodDetails: currentPaymentMode.name,
+    );
+
+    activityController.addActivity(activity);
+    log("Activity added on route drawn: $destination");
   }
 
   @override
@@ -146,7 +177,8 @@ class HomeController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void onLocationSelected(String selectedLocationAddress) async {
+  // Enhanced location selection method
+  Future<LatLng?> onLocationSelected(String selectedLocationAddress) async {
     _destinationController.text = selectedLocationAddress;
     notifyListeners();
 
@@ -156,9 +188,14 @@ class HomeController extends ChangeNotifier {
     if (location != null) {
       _destinationLatLng = LatLng(location.latitude, location.longitude);
       log("Destination LatLng: $_destinationLatLng");
+
+      // Add destination marker
+      _markers.removeWhere(
+        (marker) => marker.markerId == const MarkerId("destination"),
+      );
       _markers.add(
         Marker(
-          markerId: const MarkerId("destinationLocation"),
+          markerId: const MarkerId("destination"),
           position: _destinationLatLng!,
           icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
           infoWindow: InfoWindow(
@@ -167,27 +204,36 @@ class HomeController extends ChangeNotifier {
           ),
         ),
       );
-      notifyListeners();
-      if (_isMapControllerInitialized && _mapController != null) {
-        _mapController!.animateCamera(
-          CameraUpdate.newLatLngZoom(_destinationLatLng!, 16.5),
+
+      // Calculate estimated fare based on distance (optional)
+      if (_currentPosition != null) {
+        double distanceKm =
+            Geolocator.distanceBetween(
+              _currentPosition!.latitude,
+              _currentPosition!.longitude,
+              _destinationLatLng!.latitude,
+              _destinationLatLng!.longitude,
+            ) /
+            1000; // Convert meters to kilometers
+
+        // Simple fare calculation: base fare + distance rate
+        double baseFare = 500;
+        double ratePerKm = 200;
+        _estimatedFare = baseFare + (distanceKm * ratePerKm);
+
+        log(
+          "Distance: ${distanceKm.toStringAsFixed(2)} km, Estimated fare: $_estimatedFare CFA",
         );
       }
+
+      notifyListeners();
+      return _destinationLatLng;
     } else {
       log(
         "Could not convert destination address to coordinates: $selectedLocationAddress",
       );
+      return null;
     }
-  }
-
-  void updateSheetSize(double size) {
-    _sheetChildSize = size;
-    notifyListeners();
-  }
-
-  void resetSheetToInitialSize() {
-    _sheetChildSize = 0.28;
-    notifyListeners();
   }
 
   void resetRideState() {
@@ -198,8 +244,9 @@ class HomeController extends ChangeNotifier {
     _taxiPosition = null;
     _taxiStartMovePosition = null;
     _taxiArrived = false;
-    _selectedPaymentOption = "Direct Cash";
-    _currentPaymentMode = PaymentMode.directCash;
+    _selectedPaymentOption = null;
+    _currentPaymentMode = PaymentMode.momo;
+    _selectedCashDenomination = null;
 
     _remainingTimeInSeconds = 0;
 
@@ -228,12 +275,31 @@ class HomeController extends ChangeNotifier {
     log("Ride state reset for new request.");
   }
 
-  void confirmRide() {
-    print("Ride Confirmed by user!");
-    // Implement actual logic for confirming the ride, e.g., navigate to a ride-in-progress screen
-    // For now, let's reset for demonstration
-    _markers.clear();
+  void cancelPendingRide(BuildContext context) {
+    _driverFoundPendingConfirmation = false;
+    _isRequestingRide = false;
+    _rideFound = false;
+    resetRideState();
     notifyListeners();
+    showCustomSnackbar(context, "Ride request cancelled.", ToastType.info);
+    log("Pending ride cancelled by user.");
+  }
+
+  void confirmRide(BuildContext context) {
+    print("Ride Confirmed by user!");
+    _driverFoundPendingConfirmation = false;
+    _rideFound = true;
+    notifyListeners();
+    if (_currentPosition != null) {
+      _remainingTimeInSeconds = _initialSimulatedArrivalTime;
+      _startArrivalCountdown(context);
+      _startTaxiMovementSimulation();
+      addActivityOnRouteDrawn(
+        context,
+        _destinationController.text,
+        _estimatedFare ?? 0.0,
+      );
+    }
   }
 
   Future<void> _loadLocationFromSharedPreferences() async {
@@ -389,7 +455,6 @@ class HomeController extends ChangeNotifier {
     if (_estimatedFare == null || _estimatedFare! <= 0) {
       log("Error: Fare not estimated. Please try again.");
       _estimatedFare = 400;
-      return;
     }
 
     if (_currentPaymentMode == PaymentMode.directCash) {
@@ -404,11 +469,7 @@ class HomeController extends ChangeNotifier {
     }
 
     if (destination.isEmpty || _destinationLatLng == null) {
-      showCustomSnackbar(
-        context,
-        "Please enter a destination",
-        ToastType.error,
-      );
+      log("Destination location needed");
       return;
     }
 
@@ -423,6 +484,7 @@ class HomeController extends ChangeNotifier {
 
     _isRequestingRide = true;
     _rideFound = false;
+    _driverFoundPendingConfirmation = false;
     _taxiArrived = false;
     _polylines.clear();
     _arrivalCountdownTimer?.cancel();
@@ -442,6 +504,15 @@ class HomeController extends ChangeNotifier {
       );
     }
 
+    _markers.add(
+      Marker(
+        markerId: const MarkerId("Destination"),
+        position: _destinationLatLng!,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+        infoWindow: InfoWindow(title: _destinationController.text),
+      ),
+    );
+
     notifyListeners();
 
     if (_isMapControllerInitialized &&
@@ -451,8 +522,6 @@ class HomeController extends ChangeNotifier {
         CameraUpdate.newLatLngZoom(_currentPosition!, 14),
       );
     }
-
-    updateSheetSize(0.12);
 
     await Future.delayed(const Duration(seconds: 3));
 
@@ -497,15 +566,16 @@ class HomeController extends ChangeNotifier {
         ),
       );
 
-      _rideFound = true;
+      _driverFoundPendingConfirmation = true;
+
+      //_rideFound = true;
 
       showCustomSnackbar(
         context,
-        "Taxi found! Arriving in ${(_initialSimulatedArrivalTime / 60).round()} min",
-        ToastType.success,
+        "A taxi has been found! Please confirm your ride.",
+        ToastType.info,
       );
 
-      // Adjust camera to show user and taxi
       if (_isMapControllerInitialized && _mapController != null) {
         _mapController!.animateCamera(
           CameraUpdate.newLatLngBounds(
@@ -533,8 +603,6 @@ class HomeController extends ChangeNotifier {
       }
 
       _remainingTimeInSeconds = _initialSimulatedArrivalTime;
-      _startArrivalCountdown(context);
-      // _startTaxiMovementSimulation(); // Uncomment if you want taxi movement
     } else {
       showCustomSnackbar(
         context,
@@ -547,23 +615,18 @@ class HomeController extends ChangeNotifier {
   }
 
   void _startArrivalCountdown(BuildContext context) {
-    _arrivalCountdownTimer?.cancel(); // Cancel any existing timer
+    _arrivalCountdownTimer?.cancel();
     _arrivalCountdownTimer = Timer.periodic(const Duration(seconds: 1), (
       timer,
     ) {
       if (_remainingTimeInSeconds > 0) {
         _remainingTimeInSeconds--;
-        notifyListeners(); // Update UI with new time
+        notifyListeners();
       } else {
         _arrivalCountdownTimer?.cancel();
-        _taxiMovementTimer?.cancel(); // Stop taxi movement too
-        _taxiArrived = true; // Set flag
-        notifyListeners(); // Update UI to dismiss timer text
-        showCustomSnackbar(
-          context,
-          "Your taxi has arrived!",
-          ToastType.success,
-        );
+        _taxiMovementTimer?.cancel();
+        _taxiArrived = true;
+        notifyListeners();
 
         if (_currentPosition != null && _destinationLatLng != null) {
           _drawRouteToDestination(
@@ -577,7 +640,6 @@ class HomeController extends ChangeNotifier {
           );
         }
 
-        // Optionally, recenter map on user after arrival
         if (_isMapControllerInitialized &&
             _mapController != null &&
             _currentPosition != null) {
@@ -589,11 +651,9 @@ class HomeController extends ChangeNotifier {
     });
   }
 
-  // New: Method to start taxi movement simulation
   void _startTaxiMovementSimulation() {
-    _taxiMovementTimer?.cancel(); // Cancel any existing timer
+    _taxiMovementTimer?.cancel();
 
-    // Calculate total steps based on total simulated time and update interval
     final int totalSteps =
         (_initialSimulatedArrivalTime * 1000) ~/ _movementUpdateIntervalMs;
     int currentStep = 0;
@@ -657,7 +717,7 @@ class HomeController extends ChangeNotifier {
   ) async {
     _isDrawingRoute = true;
     notifyListeners();
-    _polylines.clear(); // Clear existing polylines
+    _polylines.clear();
 
     log(
       "Drawing route from ${origin.latitude},${origin.longitude} to ${destination.latitude},${destination.longitude}",
@@ -697,8 +757,7 @@ class HomeController extends ChangeNotifier {
               Polyline(
                 polylineId: const PolylineId("user_to_destination_route"),
                 points: polylineCoordinates,
-                color:
-                    AppColors.primary, // Or any color you prefer for the route
+                color: AppColors.primary,
                 width: 5,
                 jointType: JointType.round,
                 endCap: Cap.roundCap,
@@ -706,48 +765,27 @@ class HomeController extends ChangeNotifier {
               ),
             );
 
-            // Animate camera to fit the entire route
             if (_isMapControllerInitialized && _mapController != null) {
               LatLngBounds bounds = _boundsFromLatLngList(polylineCoordinates);
               _mapController!.animateCamera(
                 CameraUpdate.newLatLngBounds(bounds, 100),
-              ); // Padding of 100
+              );
             }
-
-            showCustomSnackbar(
-              context,
-              "Route drawn successfully!",
-              ToastType.success,
-            );
           } else {
-            showCustomSnackbar(
-              context,
-              "No polyline points found for route.",
-              ToastType.info,
-            );
+            log("Something went wrong");
           }
         } else {
           String errorMessage =
               data['error_message'] ?? "Could not find a route.";
-          showCustomSnackbar(
-            context,
-            "Route Error: $errorMessage",
-            ToastType.error,
-          );
+
           log("Directions API Error: ${data['status']} - $errorMessage");
         }
       } else {
-        showCustomSnackbar(
-          context,
-          "Failed to fetch route. Status: ${response.statusCode}",
-          ToastType.error,
-        );
         log(
           "Directions API HTTP Error: ${response.statusCode} - ${response.body}",
         );
       }
     } catch (e) {
-      showCustomSnackbar(context, "Error drawing route: $e", ToastType.error);
       log("Exception in _drawRouteToDestination: $e");
     } finally {
       _isDrawingRoute = false;

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:taketaxi/features/activity/controller/activity_controller.dart';
 import 'package:taketaxi/features/home/controller/home_controller.dart';
 import 'package:taketaxi/features/notifications/controller/notification_controller.dart';
 import 'package:taketaxi/features/profile/controller/profile_controller.dart';
@@ -23,6 +24,7 @@ class TakeTaxiApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => HomeController()),
         ChangeNotifierProvider(create: (_) => ProfileController()),
         ChangeNotifierProvider(create: (_) => NotificationsController()),
+        ChangeNotifierProvider(create: (_) => ActivityController()),
       ],
       child: MaterialApp.router(
         title: 'TakeTaxi',
