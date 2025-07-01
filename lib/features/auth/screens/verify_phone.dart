@@ -1,6 +1,9 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pin_code_fields/pin_code_fields.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:taketaxi/core/constants/colors.dart';
 import 'package:taketaxi/shared/widgets/custom_button.dart';
 import 'package:taketaxi/shared/widgets/custom_toast.dart';
@@ -16,13 +19,157 @@ class EnterCodeScreen extends StatefulWidget {
 }
 
 class _EnterCodeScreenState extends State<EnterCodeScreen> {
-  String code = "";
+  String _otpCode = "";
+  bool _isLoading = false;
+
+  final SupabaseClient supabase = Supabase.instance.client;
+
+  Future<void> _verifyOtp() async {
+    if (_otpCode.isEmpty || _otpCode.length < 6) {
+      showCustomSnackbar(
+        context,
+        "Please enter the full 6-digit verification code.",
+        ToastType.error,
+      );
+      return;
+    }
+    if (widget.phoneNumber == null) {
+      showCustomSnackbar(
+        context,
+        "Phone number not provided. Please go back and re-enter.",
+        ToastType.error,
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final AuthResponse response = await supabase.auth.verifyOTP(
+        phone: widget.phoneNumber!,
+        token: _otpCode,
+        type: OtpType.sms,
+      );
+
+      if (response.session != null && response.user != null) {
+        final existingUser =
+            await supabase
+                .from('users')
+                .select('*')
+                .eq('id', response.user!.id)
+                .limit(1)
+                .maybeSingle();
+
+        if (existingUser == null) {
+          await supabase.from('users').insert({
+            'id': response.user!.id,
+            'phone_number': widget.phoneNumber!,
+            'is_driver': false,
+            'name': response.user!.phone,
+          });
+        }
+
+        showCustomSnackbar(
+          context,
+          "Authentication successful!",
+          ToastType.success,
+        );
+
+        context.go("/complete_profile");
+      } else {
+        showCustomSnackbar(
+          context,
+          "Verification failed. Please try again.",
+          ToastType.error,
+        );
+      }
+    } on AuthException catch (e) {
+      showCustomSnackbar(
+        context,
+        "Verification failed: ${e.message}",
+        ToastType.error,
+      );
+      print('Supabase Auth Error (Verify OTP): ${e.message}');
+    } catch (e) {
+      showCustomSnackbar(
+        context,
+        "An unexpected error occurred. Please try again.",
+        ToastType.error,
+      );
+      print('Generic Error (Verify OTP): $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _resendCode() async {
+    if (widget.phoneNumber == null) {
+      showCustomSnackbar(
+        context,
+        "Phone number not available to resend.",
+        ToastType.error,
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await supabase.auth.signInWithOtp(phone: widget.phoneNumber!);
+      showCustomSnackbar(
+        context,
+        "Verification code resent!",
+        ToastType.success,
+      );
+    } on AuthException catch (e) {
+      showCustomSnackbar(
+        context,
+        "Error resending code: ${e.message}",
+        ToastType.error,
+      );
+      print('Supabase Auth Error (Resend OTP): ${e.message}');
+    } catch (e) {
+      showCustomSnackbar(
+        context,
+        "An unexpected error occurred. Please try again.",
+        ToastType.error,
+      );
+      print('Generic Error (Resend OTP): $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final double screenWidth = MediaQuery.of(context).size.width;
+    const double horizontalPadding = 24.0;
+    const double fieldOuterPaddingHorizontal = 8.0;
+    const int numberOfFields = 6;
+    const double fieldHeight = 60.0;
+
+    final double availableWidthForFields =
+        screenWidth - (2 * horizontalPadding);
+    double calculatedFieldWidth =
+        (availableWidthForFields / numberOfFields) -
+        (2 * fieldOuterPaddingHorizontal);
+
+    if (calculatedFieldWidth < 30) {
+      calculatedFieldWidth = 30;
+    }
+
     return SafeArea(
       child: Scaffold(
         backgroundColor: AppColors.white,
+        resizeToAvoidBottomInset: true,
         appBar: AppBar(
           backgroundColor: AppColors.white,
           elevation: 0,
@@ -46,88 +193,104 @@ class _EnterCodeScreenState extends State<EnterCodeScreen> {
         ),
         body: SingleChildScrollView(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 16),
-                Text(
-                  "Enter the 6-digit code we sent to ${widget.phoneNumber ?? '+237 677 123 456'}",
-                  style: GoogleFonts.poppins(
-                    fontSize: 16,
-                    color: AppColors.black,
-                  ),
-                ),
-                const SizedBox(height: 32),
-                PinCodeTextField(
-                  keyboardType: TextInputType.number,
-                  appContext: context,
-                  length: 4,
-                  obscureText: false,
-                  autoFocus: true,
-                  animationType: AnimationType.fade,
-                  textStyle: GoogleFonts.poppins(
-                    fontSize: 30,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black,
-                  ),
-                  pinTheme: PinTheme(
-                    shape: PinCodeFieldShape.box,
-                    borderRadius: BorderRadius.circular(8),
-                    fieldHeight: 60,
-                    fieldWidth: 60,
-                    activeFillColor: Colors.grey[200],
-                    inactiveFillColor: Colors.grey[200],
-                    selectedFillColor: Colors.grey[200],
-                    activeColor: AppColors.primary,
-                    inactiveColor: Colors.transparent,
-                    selectedColor: AppColors.primary,
-                    fieldOuterPadding: const EdgeInsets.symmetric(
-                      horizontal: 8.0,
-                    ),
-                  ),
-                  enableActiveFill: true,
-                  onChanged: (value) {
-                    setState(() {
-                      code = value;
-                    });
-                  },
-                  onCompleted: (value) {
-                    setState(() {
-                      code = value;
-                    });
-                  },
-                ),
-                const SizedBox(height: 16),
-                Align(
-                  alignment: Alignment.center,
-                  child: TextButton(
-                    onPressed: () {
-                      // resend code logic here
-                    },
-                    child: Text(
-                      "Resend code",
+            padding: const EdgeInsets.symmetric(
+              horizontal: horizontalPadding,
+            ), // Use the constant
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight:
+                    MediaQuery.of(context).size.height -
+                    AppBar().preferredSize.height -
+                    MediaQuery.of(context).padding.top -
+                    MediaQuery.of(context).padding.bottom,
+              ),
+              child: IntrinsicHeight(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 16),
+                    Text(
+                      "Enter the 6-digit code we sent to ${widget.phoneNumber ?? 'your phone'}",
                       style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        color: AppColors.primary,
+                        fontSize: 16,
+                        color: AppColors.black,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
-                  ),
+                    const SizedBox(height: 32),
+                    PinCodeTextField(
+                      keyboardType: TextInputType.number,
+                      appContext: context,
+                      length: numberOfFields,
+                      obscureText: false,
+                      autoFocus: true,
+                      animationType: AnimationType.fade,
+                      textStyle: GoogleFonts.poppins(
+                        fontSize: 30,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
+                      pinTheme: PinTheme(
+                        shape: PinCodeFieldShape.box,
+                        borderRadius: BorderRadius.circular(8),
+                        fieldHeight: fieldHeight,
+                        fieldWidth: calculatedFieldWidth,
+                        activeFillColor: Colors.grey[200],
+                        inactiveFillColor: Colors.grey[200],
+                        selectedFillColor: Colors.grey[200],
+                        activeColor: AppColors.primary,
+                        inactiveColor: Colors.transparent,
+                        selectedColor: AppColors.primary,
+                        fieldOuterPadding: const EdgeInsets.symmetric(
+                          horizontal: fieldOuterPaddingHorizontal,
+                        ),
+                      ),
+                      enableActiveFill: true,
+                      onChanged: (value) {
+                        setState(() {
+                          _otpCode = value;
+                        });
+                      },
+                      onCompleted: (value) {
+                        setState(() {
+                          _otpCode = value;
+                        });
+                        if (value.length == numberOfFields && !_isLoading) {
+                          _verifyOtp();
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    Align(
+                      alignment: Alignment.center,
+                      child: TextButton(
+                        onPressed: _isLoading ? null : _resendCode,
+                        child: Text(
+                          "Resend code",
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    SizedBox(
+                      width: double.infinity,
+                      child: CustomRoundedButton(
+                        text: _isLoading ? "Verifying..." : 'Verify',
+                        backgroundColor:
+                            _isLoading
+                                ? AppColors.buttonDisabled
+                                : AppColors.primary,
+                        onPressed: _isLoading ? () {} : _verifyOtp,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
                 ),
-                const SizedBox(height: 100),
-                SizedBox(
-                  width: double.infinity,
-                  child: CustomRoundedButton(
-                    text: 'Continue',
-                    backgroundColor: AppColors.primary,
-                    onPressed: () {
-                      context.go('/complete_profile');
-                    },
-                  ),
-                ),
-                const SizedBox(height: 40),
-              ],
+              ),
             ),
           ),
         ),

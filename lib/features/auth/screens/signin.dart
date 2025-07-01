@@ -1,7 +1,11 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:taketaxi/core/constants/colors.dart';
+import 'package:taketaxi/features/auth/screens/verify_phone.dart';
 import 'package:taketaxi/shared/widgets/custom_button.dart';
 import 'package:taketaxi/shared/widgets/custom_toast.dart';
 import 'package:intl_phone_field/intl_phone_field.dart';
@@ -16,6 +20,9 @@ class SignIn extends StatefulWidget {
 class _SignInState extends State<SignIn> {
   String? phoneNumber;
   final TextEditingController _phoneController = TextEditingController();
+  bool _isLoading = false;
+
+  final SupabaseClient supabase = Supabase.instance.client;
 
   @override
   void dispose() {
@@ -23,17 +30,58 @@ class _SignInState extends State<SignIn> {
     super.dispose();
   }
 
-  void checkField() {
-    if (phoneNumber != null && phoneNumber!.isNotEmpty) {
-      // Navigate to OTP screen or handle next step
-      context.push('/verifyphone', extra: phoneNumber);
-      showCustomSnackbar(context, "Code sent successfully", ToastType.success);
-    } else {
+  Future<void> _sendOtp() async {
+    if (phoneNumber == null || phoneNumber!.isEmpty) {
       showCustomSnackbar(
         context,
         "Please Enter your phone number",
         ToastType.error,
       );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await supabase.auth.signInWithOtp(phone: phoneNumber!);
+
+      final existingUser =
+          await supabase
+              .from('users')
+              .select('id')
+              .eq('phone_number', phoneNumber!)
+              .limit(1)
+              .maybeSingle();
+
+      if (existingUser == null) {
+        // Optionally, you can log or handle the case for new users here.
+        print('OTP sent. User will be created after verification if needed.');
+      }
+
+      showCustomSnackbar(
+        context,
+        "Verification code sent to $phoneNumber",
+        ToastType.success,
+      );
+
+      // Navigate to the OTP verification screen
+      context.go("/verifyphone", extra: phoneNumber);
+    } on AuthException catch (e) {
+      showCustomSnackbar(context, "Error: ${e.message}", ToastType.error);
+      print('Supabase Auth Error: ${e.message}');
+    } catch (e) {
+      showCustomSnackbar(
+        context,
+        "An unexpected error occurred. Please try again.",
+        ToastType.error,
+      );
+      print('Generic Error: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
@@ -111,14 +159,14 @@ class _SignInState extends State<SignIn> {
                 SizedBox(
                   width: double.infinity,
                   child: CustomRoundedButton(
-                    text: 'Next',
+                    text: _isLoading ? "Sending otp.." : 'Next',
                     backgroundColor:
-                        phoneNumber != null && phoneNumber!.isNotEmpty
+                        phoneNumber != null &&
+                                phoneNumber!.isNotEmpty &&
+                                !_isLoading
                             ? AppColors.primary
                             : AppColors.buttonDisabled,
-                    onPressed: () {
-                      checkField();
-                    },
+                    onPressed: _isLoading ? () {} : _sendOtp,
                   ),
                 ),
                 const SizedBox(

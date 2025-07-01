@@ -561,7 +561,9 @@ class HomeController extends ChangeNotifier {
         Marker(
           markerId: const MarkerId("taxiLocation"),
           position: _taxiPosition!,
-          icon: _customTaxiIcon!,
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueYellow,
+          ),
           infoWindow: const InfoWindow(title: "Your Taxi"),
         ),
       );

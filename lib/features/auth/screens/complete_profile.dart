@@ -1,11 +1,15 @@
+import 'dart:convert';
+import 'dart:developer';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:taketaxi/core/constants/colors.dart';
 import 'package:taketaxi/shared/widgets/custom_button.dart';
+import 'package:taketaxi/shared/widgets/custom_toast.dart';
 
 class CompleteProfileScreen extends StatefulWidget {
   const CompleteProfileScreen({super.key});
@@ -21,6 +25,8 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   File? _idCardImage;
 
   final ImagePicker _picker = ImagePicker();
+  final SupabaseClient _supabase = Supabase.instance.client;
+  bool _isLoading = false;
 
   Future<void> _pickImage(ImageSource source, bool isProfileImage) async {
     final pickedFile = await _picker.pickImage(source: source);
@@ -31,6 +37,91 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         } else {
           _idCardImage = File(pickedFile.path);
         }
+      });
+    }
+  }
+
+  Future<void> _submitProfile() async {
+    final String fullName = _fullNameController.text.trim();
+    final String? userId = _supabase.auth.currentUser?.id;
+
+    if (fullName.isEmpty) {
+      showCustomSnackbar(
+        context,
+        "Please enter your full name.",
+        ToastType.error,
+      );
+      return;
+    }
+
+    if (userId == null) {
+      showCustomSnackbar(
+        context,
+        "User not logged in. Please re-authenticate.",
+        ToastType.error,
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      String? profilePicUrl;
+
+      if (_profileImage != null) {
+        final String imageFileName =
+            'profile_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        final String imagePath = '$userId/$imageFileName';
+
+        final String storageResponse = await _supabase.storage
+            .from('profilepictures')
+            .upload(
+              imagePath,
+              _profileImage!,
+              fileOptions: const FileOptions(
+                cacheControl: '3600',
+                upsert: false,
+              ),
+            );
+
+        profilePicUrl = _supabase.storage
+            .from('profilepictures')
+            .getPublicUrl(imagePath);
+      }
+
+      final Map<String, dynamic> updateData = {'name': fullName};
+      if (profilePicUrl != null) {
+        updateData['profile_pic_url'] = profilePicUrl;
+      }
+
+      await _supabase.from('users').update(updateData).eq('id', userId);
+
+      showCustomSnackbar(
+        context,
+        "Profile updated successfully!",
+        ToastType.success,
+      );
+
+      context.go("/main/home");
+    } on StorageException catch (e) {
+      showCustomSnackbar(
+        context,
+        "Error uploading image: ${e.message}",
+        ToastType.error,
+      );
+      print('Storage Error: ${e.message}');
+    } catch (e) {
+      showCustomSnackbar(
+        context,
+        "Error updating profile: $e",
+        ToastType.error,
+      );
+      print('Profile update error: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
       });
     }
   }
@@ -178,18 +269,22 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
               SizedBox(
                 width: double.infinity,
                 child: CustomRoundedButton(
-                  text: 'Submit',
+                  text: _isLoading ? 'Submitting...' : 'Submit',
                   backgroundColor:
-                      AppColors.primary, // Using AppColors.primary for yellow
-                  onPressed: () {
-                    // TODO: Implement submission logic (e.g., validate fields, upload images)
-                    print('Full Name: ${_fullNameController.text}');
-                    print('Profile Image Path: ${_profileImage?.path}');
-                    print('ID Card Image Path: ${_idCardImage?.path}');
-                    context.go('/main/home');
-                  },
+                      _isLoading ? AppColors.buttonDisabled : AppColors.primary,
+                  onPressed: _isLoading ? null : _submitProfile,
                 ),
               ),
+              if (_isLoading)
+                const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      color: AppColors.primary,
+                      strokeWidth: 2,
+                    ), // Show spinner
+                  ),
+                ),
             ],
           ),
         ),
