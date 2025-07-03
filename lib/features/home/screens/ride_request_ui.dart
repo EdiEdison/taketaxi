@@ -220,7 +220,7 @@ class RequestRideScreenUI extends StatelessWidget {
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      "${controller.carModel} • ${controller.licensePlate}",
+                                      "${controller.plateNumber} • ${controller.badgeNumber}",
                                       style: GoogleFonts.poppins(
                                         fontSize: 16,
                                         color: AppColors.grey,
@@ -442,8 +442,8 @@ class RequestRideScreenUI extends StatelessWidget {
                               const SizedBox(width: 24),
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(12),
-                                child: Image.asset(
-                                  'assets/images/driver_placeholder.png',
+                                child: Image.network(
+                                  controller.profilePicUrl,
                                   width: 100,
                                   height: 100,
                                   fit: BoxFit.cover,
@@ -512,7 +512,7 @@ class RequestRideScreenUI extends StatelessWidget {
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      "${controller.carModel} • ${controller.licensePlate}",
+                                      "${controller.plateNumber} • ${controller.badgeNumber}",
                                       style: GoogleFonts.poppins(
                                         fontSize: 16,
                                         color: AppColors.grey,
@@ -527,8 +527,8 @@ class RequestRideScreenUI extends StatelessWidget {
                               const SizedBox(width: 24),
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(12),
-                                child: Image.asset(
-                                  'assets/images/driver_placeholder.png',
+                                child: Image.network(
+                                  controller.profilePicUrl,
                                   width: 100,
                                   height: 100,
                                   fit: BoxFit.cover,

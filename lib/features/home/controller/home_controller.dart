@@ -10,6 +10,7 @@ import 'dart:math' show cos, sqrt, asin;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:taketaxi/core/constants/colors.dart';
 import 'package:taketaxi/core/utils/helpers.dart';
 import 'package:taketaxi/features/activity/controller/activity_controller.dart';
@@ -39,21 +40,37 @@ class HomeController extends ChangeNotifier {
   bool _rideFound = false;
   bool _taxiArrived = false;
 
+  String _currentRideId = '';
+  String _driverName = 'N/A';
+  String _carModel = 'N/A';
+  String _licensePlate = 'N/A';
+  String _plateNumber = 'N/A';
+  String _badgeNumber = 'N/A';
+  String _profile_pic = '';
+
+  LatLng? _driverLocation;
+  int _estimatedEtaSeconds = 0;
+
+  Timer? _etaCountdownTimer;
+
   LatLng? _destinationLatLng;
 
   String? _selectedPaymentOption;
   String? get selectedPaymentOption => _selectedPaymentOption;
+  String get profilePicUrl => _profile_pic;
 
   String? _selectedCashDenomination;
   String? get selectedCashDenomination => _selectedCashDenomination;
-
-  double? _estimatedFare;
+  String get driverName => _driverName;
+  String get carModel => _carModel;
+  String get licensePlate => _licensePlate;
+  String get plateNumber => _plateNumber;
+  String get badgeNumber => _badgeNumber;
+  double? _estimatedFare = 0.0;
   double? get estimatedFare => _estimatedFare;
 
-  void setEstimatedFare(double fare) {
-    _estimatedFare = fare;
-    notifyListeners();
-  }
+  bool _isCalculatingFare = false;
+  bool get isCalculatingFare => _isCalculatingFare;
 
   double _sheetChildSize = 0.28;
   double get sheetChildSize => _sheetChildSize;
@@ -67,6 +84,7 @@ class HomeController extends ChangeNotifier {
   BitmapDescriptor? _customTaxiIcon;
 
   static const String _googleApiKey = "AIzaSyBpxYpVUtQlXjQgBCJNDvLkADlgTQ9IbLs";
+  final SupabaseClient _supabaseClient = Supabase.instance.client;
 
   // Getters
   GoogleMapController? get mapController => _mapController;
@@ -83,15 +101,6 @@ class HomeController extends ChangeNotifier {
   String? get estimatedArrivalTime => _estimatedArrivalTime;
   bool get rideFound => _rideFound;
 
-  String _driverName = "Jean-Pierre";
-  String get driverName => _driverName;
-
-  String _carModel = "Toyota Camry";
-  String get carModel => _carModel;
-
-  String _licensePlate = "123-ABC-456";
-  String get licensePlate => _licensePlate;
-
   bool get taxiArrived => _taxiArrived;
   PaymentMode _currentPaymentMode = PaymentMode.momo;
   PaymentMode get currentPaymentMode => _currentPaymentMode;
@@ -102,6 +111,74 @@ class HomeController extends ChangeNotifier {
     int minutes = _remainingTimeInSeconds ~/ 60;
     int seconds = _remainingTimeInSeconds % 60;
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  StreamSubscription<SupabaseStreamEvent>? _rideSubscription;
+
+  // Fare calculation constants (based on Cameroon rates)
+  static const double baseFare = 500.0; // Minimum fare
+  static const double perKmRate = 16.0; // Government rate per km
+  static const double perMinuteRate = 10.0; // For traffic considerations
+  static const double nightSurcharge = 1.2; // 20% extra at night
+  static const double peakHourMultiplier = 1.15; // 15% extra during peak hours
+
+  void setEstimatedFare(double fare) {
+    _estimatedFare = fare;
+    notifyListeners();
+  }
+
+  Future<void> calculateEstimatedFare() async {
+    if (_currentPosition == null || _destinationLatLng == null) {
+      _estimatedFare = null;
+      _isCalculatingFare = true;
+      notifyListeners();
+      return;
+    }
+    try {
+      // Calculate distance in km
+      double distanceInMeters = Geolocator.distanceBetween(
+        _currentPosition!.latitude,
+        _currentPosition!.longitude,
+        _destinationLatLng!.latitude,
+        _destinationLatLng!.longitude,
+      );
+
+      double distanceKm = distanceInMeters / 1000;
+
+      distanceKm = distanceKm < 0.1 ? 0.1 : distanceKm;
+
+      // Calculate estimated time (assuming average speed of 30km/h in city)
+      double estimatedMinutes = (distanceKm / 30) * 60;
+
+      // Base fare calculation
+      double fare =
+          baseFare +
+          (distanceKm * perKmRate) +
+          (estimatedMinutes * perMinuteRate);
+
+      // Apply time-based adjustments
+      final now = DateTime.now();
+      final isNightTime = now.hour >= 20 || now.hour < 6;
+      final isPeakHour =
+          (now.hour >= 7 && now.hour <= 9) ||
+          (now.hour >= 16 && now.hour <= 19);
+
+      if (isNightTime) {
+        fare *= nightSurcharge;
+      } else if (isPeakHour) {
+        fare *= peakHourMultiplier;
+      }
+
+      _estimatedFare = (fare / 50).round() * 50.0;
+      log("Estimated fare : $_estimatedFare ");
+    } catch (e) {
+      _estimatedFare = null;
+      log("Error calculating fare: $e");
+    } finally {
+      _isCalculatingFare = false;
+      notifyListeners();
+    }
+    notifyListeners();
   }
 
   HomeController() {
@@ -205,26 +282,8 @@ class HomeController extends ChangeNotifier {
         ),
       );
 
-      // Calculate estimated fare based on distance (optional)
-      if (_currentPosition != null) {
-        double distanceKm =
-            Geolocator.distanceBetween(
-              _currentPosition!.latitude,
-              _currentPosition!.longitude,
-              _destinationLatLng!.latitude,
-              _destinationLatLng!.longitude,
-            ) /
-            1000; // Convert meters to kilometers
-
-        // Simple fare calculation: base fare + distance rate
-        double baseFare = 500;
-        double ratePerKm = 200;
-        _estimatedFare = baseFare + (distanceKm * ratePerKm);
-
-        log(
-          "Distance: ${distanceKm.toStringAsFixed(2)} km, Estimated fare: $_estimatedFare CFA",
-        );
-      }
+      // Calculate estimated fare based on distance
+      await calculateEstimatedFare();
 
       notifyListeners();
       return _destinationLatLng;
@@ -275,32 +334,32 @@ class HomeController extends ChangeNotifier {
     log("Ride state reset for new request.");
   }
 
-  void cancelPendingRide(BuildContext context) {
-    _driverFoundPendingConfirmation = false;
-    _isRequestingRide = false;
-    _rideFound = false;
-    resetRideState();
-    notifyListeners();
-    showCustomSnackbar(context, "Ride request cancelled.", ToastType.info);
-    log("Pending ride cancelled by user.");
-  }
+  // void cancelPendingRide(BuildContext context) {
+  //   _driverFoundPendingConfirmation = false;
+  //   _isRequestingRide = false;
+  //   _rideFound = false;
+  //   resetRideState();
+  //   notifyListeners();
+  //   showCustomSnackbar(context, "Ride request cancelled.", ToastType.info);
+  //   log("Pending ride cancelled by user.");
+  // }
 
-  void confirmRide(BuildContext context) {
-    print("Ride Confirmed by user!");
-    _driverFoundPendingConfirmation = false;
-    _rideFound = true;
-    notifyListeners();
-    if (_currentPosition != null) {
-      _remainingTimeInSeconds = _initialSimulatedArrivalTime;
-      _startArrivalCountdown(context);
-      _startTaxiMovementSimulation();
-      addActivityOnRouteDrawn(
-        context,
-        _destinationController.text,
-        _estimatedFare ?? 0.0,
-      );
-    }
-  }
+  // void confirmRide(BuildContext context) {
+  //   print("Ride Confirmed by user!");
+  //   _driverFoundPendingConfirmation = false;
+  //   _rideFound = true;
+  //   notifyListeners();
+  //   if (_currentPosition != null) {
+  //     _remainingTimeInSeconds = _initialSimulatedArrivalTime;
+  //     _startArrivalCountdown(context);
+  //     _startTaxiMovementSimulation();
+  //     addActivityOnRouteDrawn(
+  //       context,
+  //       _destinationController.text,
+  //       _estimatedFare ?? 0.0,
+  //     );
+  //   }
+  // }
 
   Future<void> _loadLocationFromSharedPreferences() async {
     _isLoading = true;
@@ -449,171 +508,431 @@ class HomeController extends ChangeNotifier {
   }
 
   Future<void> requestRide(BuildContext context) async {
-    log("Ride request initiated!");
-    String destination = _destinationController.text;
+    log("Attempting to send ride request to Supabase...");
 
-    if (_estimatedFare == null || _estimatedFare! <= 0) {
-      log("Error: Fare not estimated. Please try again.");
-      _estimatedFare = 400;
-    }
-
-    if (_currentPaymentMode == PaymentMode.directCash) {
-      if (_selectedCashDenomination == null ||
-          _selectedCashDenomination!.isEmpty) {
-        log("Error: Please select your cash denomination or 'Exact Cash'.");
-        return;
-      }
-    } else if (_currentPaymentMode == null) {
-      log("Error: Please select a payment method.");
-      return;
-    }
-
-    if (destination.isEmpty || _destinationLatLng == null) {
-      log("Destination location needed");
-      return;
-    }
-
-    if (_currentPosition == null) {
+    final currentUser = _supabaseClient.auth.currentUser;
+    if (currentUser == null) {
       showCustomSnackbar(
         context,
-        "Unable to get your current location. Please ensure location services are enabled.",
+        "You must be logged in to request a ride.",
         ToastType.error,
       );
+      log("Error: User not authenticated.");
+      return;
+    }
+
+    if (_currentPosition == null ||
+        _destinationLatLng == null ||
+        _estimatedFare == null ||
+        _currentPaymentMode == null) {
+      log("Error: Missing crucial ride details.");
+      return;
+    }
+
+    if (_currentPaymentMode == PaymentMode.directCash &&
+        (_selectedCashDenomination == null ||
+            _selectedCashDenomination!.isEmpty)) {
+      log("Error: Cash denomination missing for direct cash.");
       return;
     }
 
     _isRequestingRide = true;
-    _rideFound = false;
     _driverFoundPendingConfirmation = false;
+    _rideFound = false;
     _taxiArrived = false;
-    _polylines.clear();
-    _arrivalCountdownTimer?.cancel();
-    _taxiMovementTimer?.cancel();
-    _remainingTimeInSeconds = 0;
-
     _markers.clear();
-
-    if (_currentPosition != null) {
-      _markers.add(
-        Marker(
-          markerId: const MarkerId("currentLocation"),
-          position: _currentPosition!,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
-          infoWindow: const InfoWindow(title: "My Location"),
-        ),
-      );
-    }
+    _polylines.clear();
+    _etaCountdownTimer?.cancel(); // Cancel any previous timers
+    _estimatedEtaSeconds = 0; // Reset ETA display
 
     _markers.add(
       Marker(
-        markerId: const MarkerId("Destination"),
+        markerId: const MarkerId("currentLocation"),
+        position: _currentPosition!,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+        infoWindow: const InfoWindow(title: "My Location"),
+      ),
+    );
+    _markers.add(
+      Marker(
+        markerId: const MarkerId("destination"),
         position: _destinationLatLng!,
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
         infoWindow: InfoWindow(title: _destinationController.text),
       ),
     );
 
-    notifyListeners();
-
-    if (_isMapControllerInitialized &&
-        _mapController != null &&
-        _currentPosition != null) {
+    if (_mapController != null) {
+      LatLngBounds bounds = LatLngBounds(
+        southwest: LatLng(
+          _currentPosition!.latitude < _destinationLatLng!.latitude
+              ? _currentPosition!.latitude
+              : _destinationLatLng!.latitude,
+          _currentPosition!.longitude < _destinationLatLng!.longitude
+              ? _currentPosition!.longitude
+              : _destinationLatLng!.longitude,
+        ),
+        northeast: LatLng(
+          _currentPosition!.latitude > _destinationLatLng!.latitude
+              ? _currentPosition!.latitude
+              : _destinationLatLng!.latitude,
+          _currentPosition!.longitude > _destinationLatLng!.longitude
+              ? _currentPosition!.longitude
+              : _destinationLatLng!.longitude,
+        ),
+      );
       _mapController!.animateCamera(
-        CameraUpdate.newLatLngZoom(_currentPosition!, 14),
+        CameraUpdate.newLatLngBounds(bounds, 100.0),
       );
     }
 
-    await Future.delayed(const Duration(seconds: 3));
-
-    _isRequestingRide = false;
+    notifyListeners(); // Update UI to show "Looking for a ride..."
 
     try {
-      _customTaxiIcon = await BitmapDescriptor.fromAssetImage(
-        const ImageConfiguration(size: Size(48, 48)),
-        'assets/images/taxi_medium.png',
+      final response =
+          await _supabaseClient.from('rides').insert({
+            'passenger_id': currentUser.id,
+            'pickup_location':
+                'POINT(${_currentPosition!.longitude} ${_currentPosition!.latitude})',
+            'destination_location':
+                'POINT(${_destinationLatLng!.longitude} ${_destinationLatLng!.latitude})',
+            'payment_method': _currentPaymentMode!.toString().split('.').last,
+            'price': _estimatedFare!,
+            'status': 'pending', // Initial status
+          }).select();
+
+      if (response.isNotEmpty) {
+        _currentRideId = response.first['id'] as String;
+        log("Ride request successfully sent, ID: $_currentRideId");
+        showCustomSnackbar(
+          context,
+          "Ride requested successfully! Looking for a driver...",
+          ToastType.success,
+        );
+
+        _listenForRideUpdates(context);
+      } else {
+        log("Supabase insert did not return a response or was empty.");
+        showCustomSnackbar(
+          context,
+          "Failed to register ride request.",
+          ToastType.error,
+        );
+        _isRequestingRide = false; // Reset state on failure
+      }
+    } on PostgrestException catch (e) {
+      log("Supabase Postgrest Error during ride request: ${e.message}");
+      showCustomSnackbar(
+        context,
+        "Failed to register ride request: ${e.message}",
+        ToastType.error,
       );
+      _isRequestingRide = false; // Reset state on failure
     } catch (e) {
-      log("Error loading custom taxi icon: $e");
-      _customTaxiIcon = BitmapDescriptor.defaultMarkerWithHue(
-        BitmapDescriptor.hueOrange,
+      log("General Error during ride request: $e");
+      showCustomSnackbar(
+        context,
+        "An unexpected error occurred during ride request.",
+        ToastType.error,
       );
+      _isRequestingRide = false;
+    } finally {}
+  }
+
+  void _listenForRideUpdates(BuildContext context) {
+    if (_currentRideId.isEmpty) {
+      log("No current ride ID to listen for updates.");
+      return;
     }
 
-    if (_currentPosition != null) {
-      _taxiPosition = LatLng(
-        _currentPosition!.latitude,
-        _currentPosition!.longitude + 0.0008,
-      );
-      _taxiStartMovePosition = _taxiPosition;
+    _rideSubscription?.cancel();
 
-      _markers.clear();
+    _rideSubscription = _supabaseClient
+        .from('rides')
+        .stream(primaryKey: ['id'])
+        .eq('id', _currentRideId) // Filter for the current ride
+        .listen(
+          (List<Map<String, dynamic>> data) {
+            if (data.isNotEmpty) {
+              final rideData = data.first;
+              log("Realtime ride update received: $rideData");
 
-      _markers.add(
-        Marker(
-          markerId: const MarkerId("currentLocation"),
-          position: _currentPosition!,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
-          infoWindow: const InfoWindow(title: "My Location"),
-        ),
-      );
+              final String newStatus = rideData['status'] as String;
+              final int? newEta = rideData['estimated_eta'] as int?;
+              final String? driverId =
+                  rideData['driver_id'] as String?; // Get driver ID
 
-      _markers.add(
-        Marker(
-          markerId: const MarkerId("taxiLocation"),
-          position: _taxiPosition!,
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-            BitmapDescriptor.hueYellow,
-          ),
-          infoWindow: const InfoWindow(title: "Your Taxi"),
-        ),
-      );
+              if (newEta != null && newEta >= 0) {
+                _estimatedEtaSeconds = newEta;
+                _startEtaCountdown(); // Restart or update countdown
+              }
 
-      _driverFoundPendingConfirmation = true;
-
-      //_rideFound = true;
-
-      showCustomSnackbar(
-        context,
-        "A taxi has been found! Please confirm your ride.",
-        ToastType.info,
-      );
-
-      if (_isMapControllerInitialized && _mapController != null) {
-        _mapController!.animateCamera(
-          CameraUpdate.newLatLngBounds(
-            LatLngBounds(
-              southwest: LatLng(
-                _currentPosition!.latitude < _taxiPosition!.latitude
-                    ? _currentPosition!.latitude
-                    : _taxiPosition!.latitude,
-                _currentPosition!.longitude < _taxiPosition!.longitude
-                    ? _currentPosition!.longitude
-                    : _taxiPosition!.longitude,
-              ),
-              northeast: LatLng(
-                _currentPosition!.latitude > _taxiPosition!.latitude
-                    ? _currentPosition!.latitude
-                    : _taxiPosition!.latitude,
-                _currentPosition!.longitude > _taxiPosition!.longitude
-                    ? _currentPosition!.longitude
-                    : _taxiPosition!.longitude,
-              ),
-            ),
-            100.0,
-          ),
+              if (newStatus == 'accepted' && driverId != null) {
+                _isRequestingRide = false; // No longer just "looking"
+                _driverFoundPendingConfirmation = true;
+                _fetchDriverDetails(
+                  driverId,
+                ); // New function to get driver info
+                showCustomSnackbar(
+                  context,
+                  "A driver has accepted your ride! Please confirm.",
+                  ToastType.info,
+                );
+              } else if (newStatus == 'confirmed') {
+                _driverFoundPendingConfirmation =
+                    false; // No longer pending confirmation
+                _rideFound = true; // Ride is confirmed and ongoing
+                _taxiArrived = false; // Not yet arrived
+                showCustomSnackbar(
+                  context,
+                  "Your ride is confirmed! Driver is on the way.",
+                  ToastType.success,
+                );
+                // You might start real-time driver location updates here
+                // This would replace your simulated taxi movement
+                // For now, let's just make sure the ETA countdown starts if provided
+                if (newEta != null && newEta > 0) {
+                  _estimatedEtaSeconds = newEta;
+                  _startEtaCountdown();
+                }
+              } else if (newStatus == 'arrived') {
+                _rideFound = true;
+                _taxiArrived = true; // Driver has arrived
+                _etaCountdownTimer?.cancel(); // Stop ETA countdown
+                _estimatedEtaSeconds = 0; // Reset ETA
+                showCustomSnackbar(
+                  context,
+                  "Your taxi has arrived!",
+                  ToastType.info,
+                );
+              } else if (newStatus == 'completed') {
+                _rideFound = false;
+                _taxiArrived = false;
+                _isRequestingRide = false;
+                _driverFoundPendingConfirmation = false;
+                _etaCountdownTimer?.cancel();
+                showCustomSnackbar(
+                  context,
+                  "Ride completed! Thank you.",
+                  ToastType.success,
+                );
+                // Navigate to rating screen or reset UI
+              } else if (newStatus == 'cancelled') {
+                _rideFound = false;
+                _taxiArrived = false;
+                _isRequestingRide = false;
+                _driverFoundPendingConfirmation = false;
+                _etaCountdownTimer?.cancel();
+                showCustomSnackbar(
+                  context,
+                  "Ride cancelled by driver or system.",
+                  ToastType.error,
+                );
+              }
+              notifyListeners();
+            }
+          },
+          onError: (error) {
+            log("Error in ride subscription: $error");
+            showCustomSnackbar(
+              context,
+              "Lost connection to ride updates. Please check your internet.",
+              ToastType.error,
+            );
+            _isRequestingRide = false;
+            notifyListeners();
+          },
         );
-      }
+  }
 
-      _remainingTimeInSeconds = _initialSimulatedArrivalTime;
-    } else {
+  Future<void> _fetchDriverDetails(String driverId) async {
+    try {
+      final response =
+          await _supabaseClient
+              .from('users') // Assuming 'users' table stores driver profiles
+              .select('name, plate_number, badge_number, profile_pic_url')
+              .eq('id', driverId)
+              .single(); // Expecting one driver
+
+      if (response != null) {
+        log("Response: $response");
+        _driverName = response['name'] ?? 'Unknown Driver';
+        _plateNumber = response['plate_number'] ?? 'N/A';
+        _badgeNumber = response['badge_number'] ?? 'N/A';
+        _profile_pic = response['profile_pic_url'] ?? 'N/A';
+        notifyListeners();
+      }
+    } catch (e) {
+      log("Error fetching driver details: $e");
+      _driverName = 'Error';
+      _carModel = 'Error';
+      _licensePlate = 'Error';
+      notifyListeners();
+    }
+  }
+
+  Future<void> confirmRide(BuildContext context) async {
+    if (_currentRideId.isEmpty) {
+      log("No current ride ID to confirm.");
       showCustomSnackbar(
         context,
-        "Could not find taxi. Location unavailable.",
+        "No active ride to confirm.",
+        ToastType.error,
+      );
+      return;
+    }
+
+    final currentUser = _supabaseClient.auth.currentUser;
+    if (currentUser == null) {
+      showCustomSnackbar(
+        context,
+        "You must be logged in to confirm ride.",
+        ToastType.error,
+      );
+      return;
+    }
+
+    try {
+      log("Confirming ride $_currentRideId");
+
+      final response = await _supabaseClient.rpc(
+        'confirm_ride_by_passenger',
+        params: {'ride_id': _currentRideId, 'passenger_id': currentUser.id},
+      );
+
+      log("Confirm ride response: $response");
+
+      if (response == true) {
+        log("Ride $_currentRideId successfully confirmed.");
+        showCustomSnackbar(
+          context,
+          "Ride confirmed! Your driver is on the way.",
+          ToastType.success,
+        );
+
+        // Update local state
+        _driverFoundPendingConfirmation = false;
+        _rideFound = true;
+
+        if (_currentPosition != null && _destinationLatLng != null) {
+          await _drawRouteToDestination(
+            context,
+            _currentPosition!,
+            _destinationLatLng!,
+          );
+
+          // Optionally zoom to fit the route
+          if (_isMapControllerInitialized && _mapController != null) {
+            final bounds = _boundsFromLatLngList(_polylines.first.points);
+            _mapController!.animateCamera(
+              CameraUpdate.newLatLngBounds(bounds, 100),
+            );
+          }
+        }
+        notifyListeners();
+      } else {
+        log("Failed to confirm ride $_currentRideId");
+        showCustomSnackbar(
+          context,
+          "Failed to confirm ride. It may have been cancelled.",
+          ToastType.error,
+        );
+
+        // Reset state
+        resetRideState();
+        ();
+      }
+    } on PostgrestException catch (e) {
+      log("Error confirming ride: ${e.message}");
+      showCustomSnackbar(
+        context,
+        "Failed to confirm ride: ${e.message}",
+        ToastType.error,
+      );
+    } catch (e) {
+      log("Unexpected error confirming ride: $e");
+      showCustomSnackbar(
+        context,
+        "An unexpected error occurred.",
         ToastType.error,
       );
     }
+  }
 
-    notifyListeners();
+  Future<void> cancelPendingRide(BuildContext context) async {
+    if (_currentRideId.isEmpty) {
+      log("No current ride ID to cancel.");
+      showCustomSnackbar(context, "No active ride to cancel.", ToastType.error);
+      return;
+    }
+
+    final currentUser = _supabaseClient.auth.currentUser;
+    if (currentUser == null) {
+      showCustomSnackbar(
+        context,
+        "You must be logged in to cancel ride.",
+        ToastType.error,
+      );
+      return;
+    }
+
+    try {
+      log("Cancelling ride $_currentRideId");
+
+      final response = await _supabaseClient.rpc(
+        'cancel_ride_by_passenger',
+        params: {'ride_id': _currentRideId, 'passenger_id': currentUser.id},
+      );
+
+      log("Cancel ride response: $response");
+
+      if (response == true) {
+        log("Ride $_currentRideId successfully cancelled.");
+        showCustomSnackbar(
+          context,
+          "Ride cancelled successfully.",
+          ToastType.info,
+        );
+
+        // Reset all ride-related state
+        resetRideState();
+      } else {
+        log("Failed to cancel ride $_currentRideId");
+        showCustomSnackbar(
+          context,
+          "Failed to cancel ride. It may have already been processed.",
+          ToastType.error,
+        );
+      }
+    } on PostgrestException catch (e) {
+      log("Error cancelling ride: ${e.message}");
+      showCustomSnackbar(
+        context,
+        "Failed to cancel ride: ${e.message}",
+        ToastType.error,
+      );
+    } catch (e) {
+      log("Unexpected error cancelling ride: $e");
+      showCustomSnackbar(
+        context,
+        "An unexpected error occurred.",
+        ToastType.error,
+      );
+    }
+  }
+
+  void _startEtaCountdown() {
+    _etaCountdownTimer?.cancel(); // Cancel any existing timer
+    if (_estimatedEtaSeconds > 0) {
+      _etaCountdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (_estimatedEtaSeconds > 0) {
+          _estimatedEtaSeconds--;
+        } else {
+          timer.cancel();
+        }
+        notifyListeners(); // Update UI every second
+      });
+    }
   }
 
   void _startArrivalCountdown(BuildContext context) {

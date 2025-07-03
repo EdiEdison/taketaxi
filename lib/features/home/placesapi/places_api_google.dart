@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
+import 'package:shimmer/shimmer.dart';
 import 'package:taketaxi/features/home/controller/home_controller.dart';
 import 'package:uuid/uuid.dart';
 import 'package:taketaxi/core/constants/colors.dart';
@@ -274,9 +275,9 @@ class _PlacesApiGoogleMapSearchState extends State<PlacesApiGoogleMapSearch> {
                                 );
                               }
 
-                              await homeController.onLocationSelected(
-                                _selectedDestination!,
-                              );
+                              // await homeController.onLocationSelected(
+                              //   _selectedDestination!,
+                              // );
 
                               // Set payment method
                               if (_selectedPaymentType == 'Momo') {
@@ -296,11 +297,6 @@ class _PlacesApiGoogleMapSearchState extends State<PlacesApiGoogleMapSearch> {
                                   _selectedCashAmount,
                                 );
                               }
-
-                              // Set estimated fare (you might want to calculate this based on distance)
-                              homeController.setEstimatedFare(
-                                1500,
-                              ); // Default fare
 
                               // Close the bottom sheet
                               Navigator.of(sheetContext).pop();
@@ -392,6 +388,7 @@ class _PlacesApiGoogleMapSearchState extends State<PlacesApiGoogleMapSearch> {
 
   @override
   Widget build(BuildContext context) {
+    final homeController = Provider.of<HomeController>(context);
     final bool isRequestButtonEnabled =
         _selectedDestination != null && _selectedDestination!.isNotEmpty;
 
@@ -439,18 +436,106 @@ class _PlacesApiGoogleMapSearchState extends State<PlacesApiGoogleMapSearch> {
               ),
             ),
             const SizedBox(height: 32),
-            Text(
-              "Estimated Fare",
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: AppColors.black,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              "The fare for this shared ride is estimated to be between 1,500 and 2,000 CFA francs. The final fare may vary depending on the route and traffic conditions.",
-              style: GoogleFonts.poppins(fontSize: 14, color: AppColors.black),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Estimated Fare",
+                  style: GoogleFonts.poppins(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.black,
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                Consumer<HomeController>(
+                  builder: (context, controller, child) {
+                    if (controller.isCalculatingFare) {
+                      return Column(
+                        children: [
+                          Shimmer.fromColors(
+                            baseColor: Colors.grey[300]!,
+                            highlightColor: Colors.grey[100]!,
+                            child: Container(
+                              height: 36,
+                              width: 120,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            "Calculating best route...",
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+
+                    if (controller.estimatedFare == null) {
+                      return Text(
+                        "Fare will be calculated after selecting destination",
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          color: AppColors.textMuted,
+                        ),
+                      );
+                    }
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        RichText(
+                          text: TextSpan(
+                            children: [
+                              TextSpan(
+                                text:
+                                    "${controller.estimatedFare!.toStringAsFixed(0)} ",
+                                style: GoogleFonts.poppins(
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                              TextSpan(
+                                text: "FCFA",
+                                style: GoogleFonts.poppins(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          "Base fare: ${HomeController.baseFare} FCFA + ${HomeController.perKmRate} FCFA/km",
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          "Final fare may vary based on traffic conditions",
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            fontStyle: FontStyle.italic,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
             ),
             Expanded(
               child:
@@ -497,7 +582,7 @@ class _PlacesApiGoogleMapSearchState extends State<PlacesApiGoogleMapSearch> {
                                         color: AppColors.black,
                                       ),
                                     ),
-                                    onTap: () {
+                                    onTap: () async {
                                       setState(() {
                                         _selectedDestination = placeDescription;
                                         _searchController.text =
@@ -513,6 +598,15 @@ class _PlacesApiGoogleMapSearchState extends State<PlacesApiGoogleMapSearch> {
                                             );
                                         placesList = [];
                                       });
+
+                                      final homeController =
+                                          Provider.of<HomeController>(
+                                            context,
+                                            listen: false,
+                                          );
+                                      await homeController.onLocationSelected(
+                                        placeDescription,
+                                      );
                                     },
                                   );
                                 },
@@ -528,11 +622,7 @@ class _PlacesApiGoogleMapSearchState extends State<PlacesApiGoogleMapSearch> {
                       isRequestButtonEnabled ? AppColors.primary : Colors.grey,
                   onPressed:
                       isRequestButtonEnabled
-                          ? () {
-                            if (_selectedDestination != null) {
-                              _showPaymentOptionsBottomSheet();
-                            }
-                          }
+                          ? _showPaymentOptionsBottomSheet
                           : null,
                 ),
               ),

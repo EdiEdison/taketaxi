@@ -57,7 +57,7 @@ class _EnterCodeScreenState extends State<EnterCodeScreen> {
         final existingUser =
             await supabase
                 .from('users')
-                .select('*')
+                .select('is_driver')
                 .eq('id', response.user!.id)
                 .limit(1)
                 .maybeSingle();
@@ -65,19 +65,21 @@ class _EnterCodeScreenState extends State<EnterCodeScreen> {
         if (existingUser == null) {
           await supabase.from('users').insert({
             'id': response.user!.id,
-            'phone_number': widget.phoneNumber!,
+            'phone_number': widget.phoneNumber,
+            'created_at': DateTime.now().toIso8601String(),
             'is_driver': false,
-            'name': response.user!.phone,
+            'age': 20,
           });
+          showCustomSnackbar(
+            context,
+            "Authentication successful! Please complete your profile.",
+            ToastType.success,
+          );
+          context.go("/complete_profile");
+        } else {
+          showCustomSnackbar(context, "Welcome back!", ToastType.success);
+          context.go('/main/home');
         }
-
-        showCustomSnackbar(
-          context,
-          "Authentication successful!",
-          ToastType.success,
-        );
-
-        context.go("/complete_profile");
       } else {
         showCustomSnackbar(
           context,

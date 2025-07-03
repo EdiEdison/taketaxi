@@ -47,37 +47,21 @@ class _SignInState extends State<SignIn> {
     try {
       await supabase.auth.signInWithOtp(phone: phoneNumber!);
 
-      final existingUser =
-          await supabase
-              .from('users')
-              .select('id')
-              .eq('phone_number', phoneNumber!)
-              .limit(1)
-              .maybeSingle();
-
-      if (existingUser == null) {
-        // Optionally, you can log or handle the case for new users here.
-        print('OTP sent. User will be created after verification if needed.');
-      }
-
       showCustomSnackbar(
         context,
         "Verification code sent to $phoneNumber",
         ToastType.success,
       );
 
-      // Navigate to the OTP verification screen
       context.go("/verifyphone", extra: phoneNumber);
     } on AuthException catch (e) {
       showCustomSnackbar(context, "Error: ${e.message}", ToastType.error);
-      print('Supabase Auth Error: ${e.message}');
     } catch (e) {
       showCustomSnackbar(
         context,
         "An unexpected error occurred. Please try again.",
         ToastType.error,
       );
-      print('Generic Error: $e');
     } finally {
       setState(() {
         _isLoading = false;

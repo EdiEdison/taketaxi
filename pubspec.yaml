@@ -26,6 +26,7 @@ dependencies:
   dotted_border: ^3.0.1
   image_picker: ^1.1.2
   supabase_flutter: ^2.9.1
+  shimmer: ^3.0.0
 
 
 

@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:developer';
 
 import 'package:taketaxi/shared/widgets/custom_toast.dart';
@@ -44,18 +45,30 @@ class _SplashScreenState extends State<SplashScreen>
     _animationController.forward();
 
     Future.delayed(const Duration(milliseconds: 1000), () {
-      _initializePermissionsAndLocation();
+      _checkAuthAndNavigate();
     });
+  }
+
+  Future<void> _checkAuthAndNavigate() async {
+    await _initializePermissionsAndLocation();
+
+    if (!mounted) return;
+    final session = Supabase.instance.client.auth.currentSession;
+    log(
+      'Supabase Session: ${session != null ? 'Authenticated' : 'Not Authenticated'}',
+    );
+
+    if (session != null) {
+      context.go('/main/home');
+    } else {
+      context.go('/signin');
+    }
   }
 
   Future<void> _initializePermissionsAndLocation() async {
     await _requestLocationPermission();
     await _requestNotificationPermission();
     await _saveCurrentLocation();
-
-    if (mounted) {
-      context.go('/signin');
-    }
   }
 
   Future<void> _requestLocationPermission() async {

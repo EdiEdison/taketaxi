@@ -11,6 +11,9 @@ class ActivityScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Provider.of<ActivityController>(context, listen: false).loadActivities();
+    });
     return Scaffold(
       backgroundColor: AppColors.white,
       appBar: AppBar(
